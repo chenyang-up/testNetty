@@ -16,52 +16,102 @@
 
 package com.czx.testNetty.demos.web;
 
+import com.alibaba.fastjson.JSONObject;
+import com.czx.testNetty.server.NettyServer;
+import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.*;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.DatagramChannel;
+import io.netty.channel.socket.DatagramPacket;
+import io.netty.channel.socket.nio.NioDatagramChannel;
+import io.netty.util.CharsetUtil;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.*;
+
+import java.net.InetSocketAddress;
 
 /**
  * @author <a href="mailto:chenxilzx1@gmail.com">theonefx</a>
  */
-@Controller
+@RestController
+@RequestMapping("/netty")
 public class BasicController {
 
-    // http://127.0.0.1:8080/hello?name=lisi
-    @RequestMapping("/hello")
-    @ResponseBody
-    public String hello(@RequestParam(name = "name", defaultValue = "unknown user") String name) {
-        return "Hello " + name;
+    @Autowired
+    private NettyServer nettyServer;
+
+    @GetMapping("/start")
+    public String startNettyServer() {
+        try {
+            nettyServer.start();
+
+            for (int i = 0; i < 10 ; i++) {
+                JSONObject jsonMsg = new JSONObject();
+                jsonMsg.put("iotId", String.valueOf(i));
+                jsonMsg.put("heartbeatCheckTime","1692528528");
+                run(jsonMsg.toJSONString());
+            }
+            return "Netty server started.";
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "Failed to start Netty server.";
+        }
     }
 
-    // http://127.0.0.1:8080/user
-    @RequestMapping("/user")
-    @ResponseBody
-    public User user() {
-        User user = new User();
-        user.setName("theonefx");
-        user.setAge(666);
-        return user;
+    public void sendMessage(String message) throws Exception {
+        EventLoopGroup group = new NioEventLoopGroup();
+        try {
+            Bootstrap b = new Bootstrap();
+            b.group(group)
+                    .channel(NioDatagramChannel.class)
+                    .handler(new ChannelInitializer<DatagramChannel>() {
+                        @Override
+                        public void initChannel(DatagramChannel ch) throws Exception {
+                            // No need to add any specific handlers for this simple example
+                        }
+                    });
+
+            ChannelFuture f = b.connect(new InetSocketAddress("127.0.0.1", 9999)).sync();
+
+            // Send the message
+            f.channel().writeAndFlush(Unpooled.copiedBuffer(message + System.getProperty("line.separator"), CharsetUtil.UTF_8));
+            f.channel().closeFuture().sync();
+        } finally {
+            group.shutdownGracefully();
+        }
     }
 
-    // http://127.0.0.1:8080/save_user?name=newName&age=11
-    @RequestMapping("/save_user")
-    @ResponseBody
-    public String saveUser(User u) {
-        return "user will save: name=" + u.getName() + ", age=" + u.getAge();
+    public void run(String message) throws Exception {
+        EventLoopGroup group = new NioEventLoopGroup();
+        try {
+            Bootstrap b = new Bootstrap();
+            b.group(group)
+                    .channel(NioDatagramChannel.class)
+                    .option(ChannelOption.SO_BROADCAST, true)
+                    .handler(new ChannelInitializer<DatagramChannel>() {
+                        @Override
+                        protected void initChannel(DatagramChannel ch) throws Exception {
+                            // 客户端不需要特别的处理器，仅用于发送消息
+                        }
+                    });
+
+            // 发送消息到服务器
+            ChannelFuture f = b.connect(new InetSocketAddress("127.0.0.1", 9999)).sync();
+            f.channel().writeAndFlush(new DatagramPacket(
+                    Unpooled.copiedBuffer(message, CharsetUtil.UTF_8),
+                    new InetSocketAddress("127.0.0.1", 9999)
+            )).sync();
+
+            // 等待关闭
+            f.channel().closeFuture().await();
+        } finally {
+            group.shutdownGracefully();
+        }
     }
 
-    // http://127.0.0.1:8080/html
-    @RequestMapping("/html")
-    public String html(){
-        return "index.html";
-    }
 
-    @ModelAttribute
-    public void parseUser(@RequestParam(name = "name", defaultValue = "unknown user") String name
-            , @RequestParam(name = "age", defaultValue = "12") Integer age, User user) {
-        user.setName("zhangsan");
-        user.setAge(18);
-    }
 }
