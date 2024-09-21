@@ -53,7 +53,7 @@ public class NettyServer {
                                     .addLast(ioTHandler);
                         }
                     });
-
+    //深刻揭示出啦
             // 绑定端口并开始接收数据包
             Channel channel = bootstrap.bind(udpServerHeartbeatCheckConfig.getUdpHeartbeatIp(), udpServerHeartbeatCheckConfig.getUdpHeartbeatPort()).sync().channel();
             channel.closeFuture().await();
